@@ -1,3 +1,4 @@
+import argparse
 import requests
 from bs4 import BeautifulSoup
 
@@ -18,13 +19,21 @@ def get_csrf_and_cookies(session: requests.Session):
     return token_input["value"]
 
 
-def perform_search(session: requests.Session, keyword: str, token: str):
-    """Send POST request with search keyword and CSRF token."""
-    data = {
-        "_csrf": token,
-        "searchConditionBean.articleNm": keyword,
-        "OAA0102": "\u691c\u7d22",  # '検索' in Unicode
-    }
+def perform_search(
+    session: requests.Session,
+    token: str,
+    case_name: str | None = None,
+    start_from: str | None = None,
+    start_to: str | None = None,
+):
+    """Send POST request with optional search parameters and CSRF token."""
+    data = {"_csrf": token, "OAA0102": "\u691c\u7d22"}
+    if case_name:
+        data["searchConditionBean.articleNm"] = case_name
+    if start_from:
+        data["searchConditionBean.publicStartDateFrom"] = start_from
+    if start_to:
+        data["searchConditionBean.publicStartDateTo"] = start_to
     resp = session.post(BASE_URL + SEARCH_ACTION, data=data, allow_redirects=False)
     resp.raise_for_status()
     # Expect redirect to result page
@@ -39,11 +48,21 @@ def perform_search(session: requests.Session, keyword: str, token: str):
 
 
 if __name__ == "__main__":
-    # Example keyword. Modify as needed.
-    keyword = "テスト"  # "test" in Japanese
+    parser = argparse.ArgumentParser(description="Search p-portal with detailed conditions")
+    parser.add_argument("--case", help="procurement case name keyword", default=None)
+    parser.add_argument("--start-from", help="public start date from (YYYY/MM/DD)", default=None)
+    parser.add_argument("--start-to", help="public start date to (YYYY/MM/DD)", default=None)
+    args = parser.parse_args()
+
     with requests.Session() as session:
         token = get_csrf_and_cookies(session)
-        html = perform_search(session, keyword, token)
+        html = perform_search(
+            session,
+            token,
+            case_name=args.case,
+            start_from=args.start_from,
+            start_to=args.start_to,
+        )
         soup = BeautifulSoup(html, "html.parser")
         results = []
         table = soup.find("table", {"class": "main-summit-info"})
