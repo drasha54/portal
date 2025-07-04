@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import requests
 from bs4 import BeautifulSoup
 
@@ -26,7 +27,10 @@ def perform_search(
     start_from: str | None = None,
     start_to: str | None = None,
 ):
-    """Send POST request with optional search parameters and CSRF token."""
+    """Send POST request with optional search parameters and CSRF token.
+
+    Returns a tuple of the resulting HTML and the URL of the results page.
+    """
     data = {"_csrf": token, "OAA0102": "\u691c\u7d22"}
     if case_name:
         data["searchConditionBean.articleNm"] = case_name
@@ -43,8 +47,8 @@ def perform_search(
             location = BASE_URL + location
         result_resp = session.get(location)
         result_resp.raise_for_status()
-        return result_resp.text
-    return resp.text
+        return result_resp.text, location
+    return resp.text, resp.url
 
 
 if __name__ == "__main__":
@@ -54,15 +58,21 @@ if __name__ == "__main__":
     parser.add_argument("--start-to", help="public start date to (YYYY/MM/DD)", default=None)
     args = parser.parse_args()
 
+    # If no date parameters are provided, use today's date for both
+    today = datetime.date.today().strftime("%Y/%m/%d")
+    start_from = args.start_from or today
+    start_to = args.start_to or today
+
     with requests.Session() as session:
         token = get_csrf_and_cookies(session)
-        html = perform_search(
+        html, results_url = perform_search(
             session,
             token,
             case_name=args.case,
-            start_from=args.start_from,
-            start_to=args.start_to,
+            start_from=start_from,
+            start_to=start_to,
         )
+        print(f"Results URL: {results_url}")
         soup = BeautifulSoup(html, "html.parser")
         results = []
         table = soup.find("table", {"class": "main-summit-info"})
