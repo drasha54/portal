@@ -1,5 +1,6 @@
 import argparse
 import datetime
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -26,7 +27,7 @@ def perform_search(
     case_name: str | None = None,
     start_from: str | None = None,
     start_to: str | None = None,
-):
+) -> tuple[str, str]:
     """Send POST request with optional search parameters and CSRF token.
 
     Returns a tuple of the resulting HTML and the URL of the results page.
@@ -51,10 +52,31 @@ def perform_search(
     return resp.text, resp.url
 
 
+def parse_results(html: str) -> list[list[str]]:
+    """Extract rows from the results table."""
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", {"class": "main-summit-info"})
+    rows: list[list[str]] = []
+    if table:
+        for row in table.select("tbody tr"):
+            cells = [c.get_text(strip=True) for c in row.find_all("td")]
+            if cells:
+                rows.append(cells)
+    return rows
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Search p-portal with detailed conditions")
     parser.add_argument("--case", help="procurement case name keyword", default=None)
-    parser.add_argument("--start-from", help="public start date from (YYYY/MM/DD)", default=None)
+    parser.add_argument(
+        "--cases",
+        nargs="*",
+        help="list of keywords to search separately",
+        default=[],
+    )
+    parser.add_argument(
+        "--start-from", help="public start date from (YYYY/MM/DD)", default=None
+    )
     parser.add_argument("--start-to", help="public start date to (YYYY/MM/DD)", default=None)
     args = parser.parse_args()
 
@@ -63,23 +85,32 @@ if __name__ == "__main__":
     start_from = args.start_from or today
     start_to = args.start_to or today
 
+    case_keywords: list[str] = []
+    if args.case:
+        case_keywords.append(args.case)
+    if args.cases:
+        case_keywords.extend(args.cases)
+    if not case_keywords:
+        case_keywords.append(None)
+
     with requests.Session() as session:
         token = get_csrf_and_cookies(session)
-        html, results_url = perform_search(
-            session,
-            token,
-            case_name=args.case,
-            start_from=start_from,
-            start_to=start_to,
-        )
-        print(f"Results URL: {results_url}")
-        soup = BeautifulSoup(html, "html.parser")
-        results = []
-        table = soup.find("table", {"class": "main-summit-info"})
-        if table:
-            for row in table.select("tbody tr"):
-                cells = [c.get_text(strip=True) for c in row.find_all("td")]
-                if cells:
-                    results.append(cells)
-        for r in results:
+        seen: set[tuple[str, ...]] = set()
+        combined: list[list[str]] = []
+        for kw in case_keywords:
+            html, results_url = perform_search(
+                session,
+                token,
+                case_name=kw,
+                start_from=start_from,
+                start_to=start_to,
+            )
+            print(f"Results URL for '{kw or ''}': {results_url}")
+            for row in parse_results(html):
+                key = tuple(row)
+                if key not in seen:
+                    seen.add(key)
+                    combined.append(row)
+
+        for r in combined:
             print("\t".join(r))
