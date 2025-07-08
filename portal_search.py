@@ -1,6 +1,5 @@
 import argparse
 import datetime
-
 import requests
 from bs4 import BeautifulSoup
 
@@ -8,7 +7,6 @@ BASE_URL = "https://www.p-portal.go.jp"
 SEARCH_PAGE = "/pps-web-biz/UAA01/OAA0101"
 SEARCH_ACTION = "/pps-web-biz/UAA01/OAA0100"
 RESULT_PAGE = "/pps-web-biz/UAA01/OAA0106"
-
 
 def get_csrf_and_cookies(session: requests.Session):
     """Fetch the search page to obtain CSRF token and cookies."""
@@ -20,19 +18,17 @@ def get_csrf_and_cookies(session: requests.Session):
         raise RuntimeError("CSRF token not found")
     return token_input["value"]
 
-
 def perform_search(
     session: requests.Session,
     token: str,
     case_name: str | None = None,
     start_from: str | None = None,
     start_to: str | None = None,
-) -> tuple[str, str]:
+):
     """Send POST request with optional search parameters and CSRF token.
-
     Returns a tuple of the resulting HTML and the URL of the results page.
     """
-    data = {"_csrf": token, "OAA0102": "\u691c\u7d22"}
+    data = {"_csrf": token, "OAA0102": "\u691c\u7d22"}  # 検索ボタン押下値
     if case_name:
         data["searchConditionBean.articleNm"] = case_name
     if start_from:
@@ -41,7 +37,6 @@ def perform_search(
         data["searchConditionBean.publicStartDateTo"] = start_to
     resp = session.post(BASE_URL + SEARCH_ACTION, data=data, allow_redirects=False)
     resp.raise_for_status()
-    # Expect redirect to result page
     if resp.status_code == 302 and "Location" in resp.headers:
         location = resp.headers["Location"]
         if not location.startswith("http"):
@@ -51,66 +46,52 @@ def perform_search(
         return result_resp.text, location
     return resp.text, resp.url
 
-
-def parse_results(html: str) -> list[list[str]]:
-    """Extract rows from the results table."""
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.find("table", {"class": "main-summit-info"})
-    rows: list[list[str]] = []
-    if table:
-        for row in table.select("tbody tr"):
-            cells = [c.get_text(strip=True) for c in row.find_all("td")]
-            if cells:
-                rows.append(cells)
-    return rows
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Search p-portal with detailed conditions")
-    parser.add_argument("--case", help="procurement case name keyword", default=None)
-    parser.add_argument(
-        "--cases",
-        nargs="*",
-        help="list of keywords to search separately",
-        default=[],
-    )
-    parser.add_argument(
-        "--start-from", help="public start date from (YYYY/MM/DD)", default=None
-    )
+    parser = argparse.ArgumentParser(description="Search p-portal with multiple keywords")
+    parser.add_argument("--start-from", help="public start date from (YYYY/MM/DD)", default=None)
     parser.add_argument("--start-to", help="public start date to (YYYY/MM/DD)", default=None)
     args = parser.parse_args()
 
-    # If no date parameters are provided, use today's date for both
     today = datetime.date.today().strftime("%Y/%m/%d")
-    start_from = args.start_from or today
-    start_to = args.start_to or today
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y/%m/%d")
 
-    case_keywords: list[str] = []
-    if args.case:
-        case_keywords.append(args.case)
-    if args.cases:
-        case_keywords.extend(args.cases)
-    if not case_keywords:
-        case_keywords.append(None)
+    start_from = yesterday
+    start_to = yesterday
+
+    # 最初に検索フォームの URL を表示
+    print(f"Search page URL: {BASE_URL + SEARCH_PAGE}")
+
+    keywords = ["データ", "システム", "サーバ", "web", "コンピュータ", "ネットワーク", "情報", "セキュリティ", "AI", "人工知能"]
+    print(f"検索ワード：{', '.join(keywords)}")
+    seen = set()       # 案件番号で重複チェック
+    all_results = []   # 重複を除いた結果リスト
 
     with requests.Session() as session:
         token = get_csrf_and_cookies(session)
-        seen: set[tuple[str, ...]] = set()
-        combined: list[list[str]] = []
-        for kw in case_keywords:
-            html, results_url = perform_search(
+
+        for kw in keywords:
+            html, _ = perform_search(
                 session,
                 token,
-                case_name=kw,
+                case_name=None,
                 start_from=start_from,
                 start_to=start_to,
             )
-            print(f"Results URL for '{kw or ''}': {results_url}")
-            for row in parse_results(html):
-                key = tuple(row)
-                if key not in seen:
-                    seen.add(key)
-                    combined.append(row)
+            soup = BeautifulSoup(html, "html.parser")
+            table = soup.find("table", {"class": "main-summit-info"})
+            if not table:
+                continue
 
-        for r in combined:
-            print("\t".join(r))
+            for row in table.select("tbody tr"):
+                cells = [c.get_text(strip=True) for c in row.find_all("td")]
+                if not cells:
+                    continue
+                case_no = cells[0]  # 先頭列を案件番号と仮定
+                if case_no in seen:
+                    continue
+                seen.add(case_no)
+                all_results.append(cells)
+
+    # 重複を除いた検索結果のみを表示
+    for r in all_results:
+        print("\t".join(r))
