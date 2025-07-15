@@ -19,5 +19,8 @@ jobs:
         run: |
           pip install requests beautifulsoup4
       - name: Run portal search
+        env:
+          # GitHub Secrets から注入
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           python portal_search.py
