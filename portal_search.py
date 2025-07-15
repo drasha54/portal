@@ -101,7 +101,7 @@ if __name__ == "__main__":
         for kw in keywords:
             html, _ = perform_search(
                 session, token,
-                case_name=kw,   # ← ここでキーワード検索
+                case_name=None,   # ← ここでキーワード検索
                 start_from=start_from,
                 start_to=start_to,
             )
