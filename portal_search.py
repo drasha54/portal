@@ -83,7 +83,7 @@ if __name__ == "__main__":
     start_to   = args.start_to   or yesterday
 
     # 検索キーワードそのまま
-    keywords = ["データ", "システム", "AI", "人工知能", "機械学習", "web", "クラウド", "コンピュータ"]
+    keywords = ["システム", "AI", "人工知能", "機械学習","アプリケーション"]
     header_lines = [
         f"Search page URL: {BASE_URL + SEARCH_PAGE}",
         f"検索ワード：{', '.join(keywords)}"
